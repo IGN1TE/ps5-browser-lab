@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Offline-first browser diagnostics for PS5, including controlled Canvas reentrancy tests. Not a jailbreak.">
+<title>PS5 Browser Research Lab | v2</title>
+<style>
+:root {font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#eef5ff;background:#0b1624;color-scheme:dark}
+* {box-sizing:border-box}
+body {margin:0}
+main {max-width:820px;margin:0 auto;padding:26px 16px 60px}
+.eyebrow {color:#8bc9fa;font-weight:800;font-size:.77rem;letter-spacing:.09em}
+.version {display:inline-block;vertical-align:middle;padding:3px 8px;margin-left:5px;background:#204367;border-radius:6px;color:#eef6ff}
+h1 {font-size:clamp(2rem,7vw,3.3rem);line-height:1.1;margin:14px 0}
+.subtitle {font-size:1.03rem;color:#c4d9ec;line-height:1.7}
+section {background:#14263b;border:1px solid #3b536d;border-radius:16px;padding:18px;margin:18px 0;overflow-wrap:break-word}
+section.warning {border-color:#ae8251;background:#2c2a2f}
+h2 {font-size:1.2rem;margin:0 0 12px}
+.section-head {display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.section-head h2 {margin:0}
+.step {background:#2b6da4;border-radius:50%;width:29px;height:29px;display:grid;place-items:center;font-weight:750;flex:0 0 auto}
+label {display:block;font-weight:700;margin:12px 0 6px}
+input,select,textarea {width:100%;display:block;padding:12px;background:#081a2b;border:1px solid #647c97;border-radius:9px;color:#eef5ff;font:inherit}
+select {margin-bottom:12px}
+textarea {resize:vertical}
+.hint {font-size:.85rem;color:#bed0e3;line-height:1.55}
+p {line-height:1.6}
+button {font:inherit;font-weight:750;background:#66b3ed;color:#0a1827;padding:11px 15px;border:0;border-radius:9px;cursor:pointer}
+button:disabled {opacity:.5;cursor:default}
+button.warn {background:#e7b276}
+button.ghost {background:transparent;border:1px solid #7b97ac;color:#e6f1ff}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible {outline:3px solid #e4f2ff;outline-offset:3px}
+pre {white-space:pre-wrap;overflow-wrap:anywhere;background:#07131f;border:1px solid #40566b;border-radius:10px;padding:15px;font-size:.82rem;line-height:1.5;max-height:480px;overflow:auto}
+pre.compact {background:#081d30;border-color:#5690bd;font-size:clamp(.8rem,2.5vw,.95rem);max-height:none;min-height:100px;color:#e5f4ff}
+pre.comparison {max-height:250px}
+details {margin-top:16px}
+summary {cursor:pointer;color:#badefb;font-weight:750;padding:8px 0}
+.actions {display:flex;gap:8px;flex-wrap:wrap}
+footer {color:#aabed3;font-size:.81rem;line-height:1.7;padding:8px}
+@media (max-width:480px) {main {padding:16px 11px}section{padding:14px}button{padding:10px 11px}}
+
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">PS5 BROWSER RESEARCH LAB <span class="version">v2.0</span></div>
+  <h1>Canvas diagnostics</h1>
+  <p class="subtitle">Explore how the PS5 browser creates and retains Canvas rendering contexts. <strong>Diagnostics only — not a jailbreak or vulnerability confirmation.</strong></p>
+
+  <section aria-labelledby="deviceTitle">
+    <h2 id="deviceTitle">Device details</h2>
+    <label for="firmware">Firmware version</label>
+    <input id="firmware" type="text" placeholder="e.g. 14.22" maxlength="40" autocomplete="off" spellcheck="false">
+    <p id="firmwareHint" class="hint">Check Settings → System → System Software → Console Information.</p>
+  </section>
+
+  <section aria-labelledby="safeTitle">
+    <div class="section-head"><span class="step">1</span><h2 id="safeTitle">Safe baseline checks</h2></div>
+    <p>Checks basic JavaScript support, pixels, Canvas context locking, object identity, and options-getter ordering. No exploit payloads.</p>
+    <button id="safe" type="button">Run safe diagnostics</button>
+  </section>
+
+  <section class="warning" aria-labelledby="advancedTitle">
+    <div class="section-head"><span class="step">2</span><h2 id="advancedTitle">Controlled Canvas experiment</h2></div>
+    <p>Reproduce your earlier result and test two controls. Every case uses a fresh Canvas and runs only once per click. <strong>The experiment may freeze or crash the PS5 browser.</strong></p>
+    <label for="case">Select a case</label>
+    <select id="case">
+      <option value="same_canvas_cross_type">A — Same Canvas: inner 2D, outer bitmaprenderer</option>
+      <option value="same_canvas_same_type">B — Same Canvas: inner and outer 2D</option>
+      <option value="separate_canvases">C — Separate canvases (control)</option>
+    </select>
+    <button id="experiment" class="warn" type="button">Run selected experiment</button>
+    <p class="hint">A browser crash is not proof of exploitability. No memory spraying, payload execution, privilege escalation, or network probing is performed.</p>
+  </section>
+
+  <section aria-labelledby="resultsTitle">
+    <div class="section-head"><span class="step">3</span><h2 id="resultsTitle">Results</h2></div>
+    <p class="hint">Screenshot the short result below. The full report includes event order, outcomes, and caught exceptions.</p>
+    <pre id="compact" aria-label="Compact diagnostic summary" class="compact">No tests have run.</pre>
+    <details>
+      <summary>Show full JSON report</summary>
+      <pre id="output" tabindex="0" aria-label="Diagnostic JSON report">No tests have run.</pre>
+    </details>
+    <p id="saveStatus" class="hint" aria-live="polite">No report yet.</p>
+    <div class="actions">
+      <button id="download" type="button" disabled>Download JSON</button>
+      <button id="copy" type="button" disabled>Copy JSON</button>
+      <button id="select" type="button" disabled>Select JSON</button>
+      <button id="clear" class="ghost" type="button" disabled>Clear</button>
+    </div>
+    <p class="hint">Reports remain in this page until you close or reload it. GitHub Pages may have ordinary hosting logs, but the lab never uploads results. The PS5 may restrict clipboard and downloads.</p>
+  </section>
+
+  <section aria-labelledby="compareTitle">
+    <h2 id="compareTitle">Compare two reports (optional)</h2>
+    <p>Paste an earlier report below to compare it with the current one. Comparison happens in your browser.</p>
+    <label for="otherReport">Earlier JSON report</label>
+    <textarea id="otherReport" rows="4" placeholder="Paste an older JSON report here"></textarea>
+    <button id="compare" type="button" disabled>Compare with current report</button>
+    <pre id="comparison" class="comparison" aria-label="Report comparison">Run a test to enable comparisons.</pre>
+  </section>
+  <footer>For hardware you own or are authorized to test. Differences in Canvas behavior can indicate implementation details but are not proof of a memory safety bug or jailbreak. User-agent strings may be compatibility identifiers rather than engine-version evidence. No third-party scripts or analytics.</footer>
+</main>
+<script>
+/* PS5 Browser Research Lab v2. Plain JS for older embedded browsers.
+ * No outbound network calls, persistence, storage, external libraries or dynamic code.
+ */
+(function () {
+  'use strict';
+  var VERSION = '2.0.0';
+  var tests = [];
+  var report = null;
+  var pageErrors = [];
+  var runId = 'lab2-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+  var firmware = document.getElementById('firmware');
+  var out = document.getElementById('output');
+  var compact = document.getElementById('compact');
+  var status = document.getElementById('saveStatus');
+  var download = document.getElementById('download');
+  var copy = document.getElementById('copy');
+  var select = document.getElementById('select');
+  var clear = document.getElementById('clear');
+  var compare = document.getElementById('compare');
+  var otherReport = document.getElementById('otherReport');
+  var comparison = document.getElementById('comparison');
+  var firmwareSource = 'manual';
+
+  function message(e) {
+    var s = e && (e.message || e.name || e) || 'unknown';
+    return String(s).slice(0, 240);
+  }
+  function nowIso() { return new Date().toISOString(); }
+  function clock() {
+    return window.performance && typeof window.performance.now === 'function' ? window.performance.now() : Date.now();
+  }
+  function elapsed(start) { return Math.max(0, Math.round((clock() - start) * 100) / 100); }
+  function logError(type, value) {
+    pageErrors.push({kind:type,message:message(value),time:nowIso()});
+    if (pageErrors.length > 10) pageErrors.shift();
+  }
+  window.addEventListener('error', function (event) { logError('page_error',event.error || event.message); });
+  window.addEventListener('unhandledrejection', function (event) { logError('unhandled_rejection',event.reason); });
+
+  // Auto-suggest the browser's firmware token when present; the user can overwrite it.
+  var ua = navigator.userAgent || '';
+  var ps5 = /PlayStation\s*5\s*\/\s*([0-9]+(?:\.[0-9]+)*)/i.exec(ua);
+  if (ps5) {
+    firmware.value = ps5[1];
+    firmwareSource = 'user_agent_hint';
+    document.getElementById('firmwareHint').textContent = 'Suggested from browser ID. Confirm it against Settings → System → System Software → Console Information.';
+  }
+  firmware.addEventListener('input', function () { firmwareSource = 'manual'; if (report) render(); });
+
+  function record(name, fn) {
+    var item = {name:name};
+    var start = clock();
+    try { item.result = fn(); }
+    catch (e) { item.error = message(e); logError('caught_test_error',e); }
+    item.elapsedMs = elapsed(start);
+    tests.push(item);
+    return item;
+  }
+  function find(name) {
+    for (var i=tests.length-1;i>=0;i--) if (tests[i].name === name) return tests[i];
+    return null;
+  }
+  function yn(value) { return value ? 'YES' : 'NO'; }
+  function detail(item, field) {
+    if (!item) return 'not run';
+    if (!item.result) return 'error: '+(item.error || 'unknown');
+    var value = item.result[field];
+    return value === undefined ? 'not recorded' : value;
+  }
+  function makeCompact() {
+    var lines = [
+      'PS5 BROWSER LAB v'+VERSION+'  |  FW '+(firmware.value.trim() || 'unspecified'),
+      'Browser: '+(navigator.platform || 'unknown'),
+      ''
+    ];
+    var safe = find('canvas_mode_lock');
+    if (safe && safe.result) {
+      lines.push('Baseline: 2D '+yn(safe.result.first_2d_created)+' | second 2D same '+yn(safe.result.same_instance)+' | bitmap after 2D '+yn(safe.result.bitmap_after_2d_created));
+    }
+    var options = find('canvas_options_order');
+    if (options && options.result) lines.push('Option getters: '+(options.result.order.join(' > ') || 'none observed'));
+    var cases = ['same_canvas_cross_type','same_canvas_same_type','separate_canvases'];
+    var names = {same_canvas_cross_type:'A / cross-type',same_canvas_same_type:'B / same-type',separate_canvases:'C / separate'};
+    for (var i=0;i<cases.length;i++) {
+      var item = find('experiment_'+cases[i]);
+      if (!item) continue;
+      if (!item.result) { lines.push(names[cases[i]]+': ERROR '+item.error); continue; }
+      var r = item.result;
+      lines.push(names[cases[i]]+': getters '+r.getterInvocations+' | inner '+yn(r.innerCreated)+' | outer '+yn(r.outerCreated)+' | '+item.elapsedMs+' ms');
+      lines.push('Afterward: 2D '+yn(r.post2dCreated)+' | bitmap '+yn(r.postBitmapCreated)+' | same inner '+yn(r.innerStillSame));
+      lines.push('Order: '+r.events.map(function (ev) {return ev.step;}).join(' > '));
+    }
+    var cross = find('experiment_same_canvas_cross_type');
+    if (cross && cross.result && cross.result.innerCreated && cross.result.outerCreated) {
+      lines.push('', 'Reentrant cross-type objects both returned.');
+      lines.push('This is a diagnostic observation, NOT an exploit.');
+    }
+    if (tests.length) lines.push('', 'Not proof of vulnerability, kernel access, or jailbreak.');
+    else lines.push('No tests have run.');
+    return lines.join('\n');
+  }
+  function render() {
+    report = {
+      schemaVersion:2, labVersion:VERSION, id:runId, firmware:firmware.value.trim().slice(0,40) || 'not specified',
+      firmwareSource:firmwareSource, userAgent:ua, time:nowIso(),
+      tests:tests.slice(), pageErrors:pageErrors.slice(), interpretation:'Browser observations only. No demonstrated vulnerability or jailbreak.'
+    };
+    out.textContent = JSON.stringify(report,null,2);
+    compact.textContent = makeCompact();
+    download.disabled = copy.disabled = select.disabled = clear.disabled = compare.disabled = false;
+    status.textContent = 'Report ready in this browser only. Screenshot the compact result or copy the JSON.';
+  }
+  function refreshNoReport() {
+    report = null;
+    out.textContent = 'No tests have run.';
+    compact.textContent = 'No tests have run.';
+    status.textContent = 'No report yet.';
+    download.disabled = copy.disabled = select.disabled = clear.disabled = compare.disabled = true;
+    comparison.textContent = 'Run a test to enable comparisons.';
+  }
+  function testFeatures() {
+    var f = {};
+    var names = ['fetch','Worker','WebAssembly','SharedArrayBuffer','BigInt','WeakRef','FinalizationRegistry','OffscreenCanvas','FontFace','WebSocket','structuredClone','createImageBitmap'];
+    for (var i=0;i<names.length;i++) f[names[i]]=typeof window[names[i]];
+    return {platform:navigator.platform || '',language:navigator.language || '',features:f};
+  }
+  function testTypedArrays() {
+    var buffer = new ArrayBuffer(16), view = new DataView(buffer);
+    view.setUint32(0,0xdecafbad,true);
+    return {byteLength:buffer.byteLength,roundtrip:view.getUint32(0,true).toString(16),resizableApi:typeof buffer.resize === 'function'};
+  }
+  function testCanvasPixels() {
+    var c=document.createElement('canvas'); c.width=c.height=8;
+    var ctx=c.getContext('2d');
+    if(!ctx) return {canvas2d:false};
+    ctx.fillStyle='#ff0000';ctx.fillRect(0,0,4,4);
+    var pixels=ctx.getImageData(1,1,1,1).data;
+    var other=document.createElement('canvas');
+    return {canvas2d:true,bitmaprenderer:!!other.getContext('bitmaprenderer'),rgba:[pixels[0],pixels[1],pixels[2],pixels[3]]};
+  }
+  function testCanvasLock() {
+    var a=document.createElement('canvas');
+    var one=a.getContext('2d');
+    var two=a.getContext('2d');
+    var incompatible=a.getContext('bitmaprenderer');
+    var b=document.createElement('canvas');
+    var independent=b.getContext('2d');
+    return {first_2d_created:!!one,same_instance:!!one && one === two,bitmap_after_2d_created:!!incompatible,
+      independent_context_created:!!independent,distinct_canvas_distinct_object:!!one && !!independent && one !== independent,
+      same_canvas_property:!!one && one.canvas === a};
+  }
+  function testCanvasOptions() {
+    var canvas=document.createElement('canvas');
+    var order=[],opts={};
+    Object.defineProperty(opts,'alpha',{get:function(){order.push('alpha');return true;}});
+    Object.defineProperty(opts,'willReadFrequently',{get:function(){order.push('willReadFrequently');return true;}});
+    order.push('call');
+    var ctx=canvas.getContext('2d',opts);
+    order.push('returned');
+    return {contextCreated:!!ctx,order:order,alphaRead:order.indexOf('alpha')!==-1,willReadFrequentlyRead:order.indexOf('willReadFrequently')!==-1};
+  }
+  function testObjectLifetime() {
+    // This intentionally does not infer garbage collection or use heap-manipulation tricks.
+    var c=document.createElement('canvas');
+    var ctx=c.getContext('2d');
+    var ref = typeof WeakRef === 'function' && ctx ? new WeakRef(ctx) : null;
+    var resetPixels=null;
+    if(ctx) {
+      ctx.fillStyle='#ff0000';ctx.fillRect(0,0,2,2);
+      c.width=c.width; // HTMLCanvasElement width reset is a documented state reset.
+      var data=ctx.getImageData(0,0,1,1).data;
+      resetPixels=[data[0],data[1],data[2],data[3]];
+    }
+    return {contextCreated:!!ctx,canvasLinkRetained:!!ctx && ctx.canvas===c,
+      sameContextAfterDimensionReset:!!ctx && c.getContext('2d')===ctx,
+      resetPixel:resetPixels,weakRefAvailable:!!ref,
+      weakRefImmediatelyAlive:ref ? !!ref.deref() : null,
+      note:'WeakRef immediate liveness says nothing about garbage collection or UAF.'};
+  }
+  document.getElementById('safe').addEventListener('click',function () {
+    tests=[];pageErrors=[];
+    record('browser_features',testFeatures);
+    record('typed_arrays',testTypedArrays);
+    record('canvas_baseline',testCanvasPixels);
+    record('canvas_mode_lock',testCanvasLock);
+    record('canvas_options_order',testCanvasOptions);
+    record('object_lifetime_control',testObjectLifetime);
+    render();
+  });
+  function describeContext(obj,canvas) {
+    if(!obj) return {created:false};
+    var name='unknown';
+    try {name=String(obj.constructor && obj.constructor.name || 'unknown');}catch(e){name='constructor unavailable';}
+    var association=null;
+    try {association=obj.canvas===canvas;}catch(e2){association=null;}
+    return {created:true,type:name,canvasMatches:association};
+  }
+  function experiment(which) {
+    var a=document.createElement('canvas');a.width=a.height=8;
+    var b=which==='separate_canvases' ? document.createElement('canvas') : a;
+    var events=[];
+    var start=clock();
+    var inner=null,outer=null,innerError=null,outerError=null;
+    var getters=0;
+    function step(s){ if(events.length<40) events.push({n:events.length+1,step:s,tMs:elapsed(start)}); }
+    var attributes={};
+    Object.defineProperty(attributes,'alpha',{get:function () {
+      getters++;step('getter-enter');
+      try {
+        step('inner-getContext-start');
+        inner=b.getContext('2d');
+        step('inner-return-'+(inner?'object':'null'));
+      } catch (error) { innerError=message(error);step('inner-throw'); }
+      step('getter-exit');
+      return true;
+    }});
+    var outerKind=which==='same_canvas_same_type'?'2d':'bitmaprenderer';
+    step('outer-'+outerKind+'-start');
+    try {outer=a.getContext(outerKind,attributes);step('outer-return-'+(outer?'object':'null'));}
+    catch(error){outerError=message(error);step('outer-throw');}
+    var post2d=null,postBitmap=null,postInner2d=null,post2dError=null,postBitmapError=null,postInner2dError=null;
+    try {step('post-2d-check');post2d=a.getContext('2d');}catch(err){post2dError=message(err);step('post-2d-throw');}
+    try {step('post-bitmap-check');postBitmap=a.getContext('bitmaprenderer');}catch(err2){postBitmapError=message(err2);step('post-bitmap-throw');}
+    if (b !== a) {
+      try {step('inner-canvas-post-2d-check');postInner2d=b.getContext('2d');}
+      catch(err3){postInner2dError=message(err3);step('inner-canvas-post-2d-throw');}
+    } else postInner2d=post2d;
+    var pixelRead=null,pixelError=null;
+    if(inner && inner.canvas === a && typeof inner.getImageData==='function') {
+      try {inner.fillStyle='#00ff00';inner.fillRect(0,0,1,1);
+        var pixels=inner.getImageData(0,0,1,1).data;
+        pixelRead=[pixels[0],pixels[1],pixels[2],pixels[3]];
+      } catch(pixelException){pixelError=message(pixelException);}
+    }
+    return {
+      variant:which,outerKind:outerKind,getterInvocations:getters,totalElapsedMs:elapsed(start),
+      innerCreated:!!inner,outerCreated:!!outer,post2dCreated:!!post2d,postBitmapCreated:!!postBitmap,
+      innerStillSame:!!inner && postInner2d===inner,outerStillSame:!!outer && ((outerKind==='2d'?post2d:postBitmap)===outer),
+      inner:describeContext(inner,b),outer:describeContext(outer,a),
+      innerError:innerError,outerError:outerError,post2dError:post2dError,postBitmapError:postBitmapError,postInner2dError:postInner2dError,
+      innerPixelRead:pixelRead,innerPixelError:pixelError,
+      events:events,
+      caution:'Only context-return and usage observations; these do not confirm memory safety vulnerabilities.'
+    };
+  }
+  document.getElementById('experiment').addEventListener('click',function () {
+    var which=document.getElementById('case').value;
+    if(!window.confirm('Controlled Canvas experiment: may freeze or close this browser. No jailbreak payload is used. Continue?')) return;
+    record('experiment_'+which,function(){return experiment(which);});
+    // Retain safe baseline plus at most nine recent experiment results.
+    var baselines=[], experiments=[];
+    for(var i=0;i<tests.length;i++) {
+      if(tests[i].name.indexOf('experiment_')===0) experiments.push(tests[i]);
+      else baselines.push(tests[i]);
+    }
+    tests=baselines.concat(experiments.slice(-9));
+    render();
+  });
+  function reportText() {return report ? JSON.stringify(report,null,2):'';}
+  download.addEventListener('click',function () {
+    if(!report) return;
+    try {
+      var url=URL.createObjectURL(new Blob([reportText()],{type:'application/json'}));
+      var a=document.createElement('a');a.href=url;a.download='ps5-lab-v2-report.json';document.body.appendChild(a);a.click();
+      if(a.parentNode)a.parentNode.removeChild(a);
+      setTimeout(function(){URL.revokeObjectURL(url);},1000);
+      status.textContent='Download requested. If blocked, try Copy JSON or a screenshot.';
+    } catch(e) {status.textContent='Download unavailable: '+message(e);}
+  });
+  select.addEventListener('click',function () {
+    if(!report) return;
+    var details=out.parentNode;
+    if(details && !details.open)details.open=true;
+    if(window.getSelection && document.createRange) {
+      var range=document.createRange();range.selectNodeContents(out);
+      var selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
+      status.textContent='JSON selected. Use the browser Copy action if supported.';
+    } else status.textContent='Selection unavailable. Take photos of the compact result.';
+  });
+  copy.addEventListener('click',function () {
+    if(!report) return;
+    if(navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(reportText()).then(function () {status.textContent='JSON copied.';},function () {select.click();status.textContent='Clipboard blocked: JSON selected where supported.';});
+    } else {select.click();status.textContent='Clipboard API unavailable: JSON selected where supported.';}
+  });
+  clear.addEventListener('click',function () {tests=[];pageErrors=[];refreshNoReport();});
+  function earlierExperiment(r) {
+    if(!r || !r.tests)return null;
+    for(var i=r.tests.length-1;i>=0;i--) {
+      var x=r.tests[i];
+      if(x.name === 'canvas_reentrancy_EXPERIMENT' && x.result) {
+        return {getterInvocations:x.result.getter_invocations,innerCreated:x.result.inner_created,outerCreated:x.result.outer_created};
+      }
+      if(x.name === 'experiment_same_canvas_cross_type' && x.result)return x.result;
+    }
+    return null;
+  }
+  function priorTest(r,name) {
+    if(!r || !r.tests)return null;
+    for(var i=r.tests.length-1;i>=0;i--)if(r.tests[i].name===name)return r.tests[i].result || null;
+    return null;
+  }
+  compare.addEventListener('click',function () {
+    if(!report)return;
+    var previous;
+    try {previous=JSON.parse(otherReport.value);}
+    catch(e){comparison.textContent='Invalid JSON: '+message(e);return;}
+    if(!previous || !previous.tests || !Array.isArray(previous.tests)) {
+      comparison.textContent='JSON must be a lab report with a tests array.';return;
+    }
+    var lines=['Older firmware: '+(previous.firmware || 'unknown'), 'Current firmware: '+report.firmware];
+    var older=earlierExperiment(previous);
+    var newer=earlierExperiment(report);
+    if(older && newer) {
+      var fields=['getterInvocations','innerCreated','outerCreated'];
+      lines.push('Case A (same-canvas reentrancy):');
+      for(var i=0;i<fields.length;i++) {
+        var key=fields[i];
+        lines.push('  '+key+': '+String(older[key])+' → '+String(newer[key])+(older[key]===newer[key]?' (same)':' (DIFFERENT)'));
+      }
+    } else lines.push('Case A was not present in both reports. Run case A to compare it.');
+    var modeOld=priorTest(previous,'canvas_mode_lock'),modeNew=priorTest(report,'canvas_mode_lock');
+    if(modeOld && modeNew)lines.push('Regular context lock: '+String(modeOld.bitmap_after_2d_created)+' → '+String(modeNew.bitmap_after_2d_created));
+    comparison.textContent=lines.join('\n');
+  });
+  refreshNoReport();
+})();
+
+</script>
+</body>
+</html>
