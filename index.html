@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Non-invasive PS5 browser diagnostics and optional Canvas behavior experiment. Not a jailbreak.">
+<title>PS5 Browser Research Lab — Static Edition</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e9f1fb;background:#0b1522}
+*{box-sizing:border-box}body{margin:0}main{max-width:760px;margin:0 auto;padding:26px 18px 50px}.kicker{color:#78b6ea;font-size:.76rem;font-weight:800;letter-spacing:.12em}h1{font-size:clamp(1.9rem,6vw,3rem);margin:.4em 0}h2{font-size:1.1rem;margin:0 0 10px}.intro{font-size:1.06rem;line-height:1.6}section{background:#162537;border:1px solid #2e4560;border-radius:16px;padding:18px 20px;margin:18px 0}section.caution{border-color:#946b37}p{line-height:1.55}input{display:block;width:100%;margin:10px 0;padding:12px;border-radius:10px;border:1px solid #64748b;background:#0c1c2d;color:#fff;font-size:1rem}.muted{color:#acbed2;font-size:.86rem}button{background:#5597d5;color:#061627;border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:750;cursor:pointer}button.warn{background:#efba74}button:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible{outline:3px solid #c2e1ff;outline-offset:3px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#07121d;border:1px solid #33465b;padding:16px;border-radius:10px;min-height:90px;max-height:450px;overflow:auto;font-size:.85rem}footer{color:#91a4ba;font-size:.82rem;line-height:1.6}code{font-family:ui-monospace,Consolas,monospace}
+.actions{display:flex;flex-wrap:wrap;gap:10px}button#select{background:#b2c6da}button#copy{background:#84b8df}#output:focus{outline:2px solid #c2e1ff;outline-offset:3px}
+
+</style>
+</head>
+<body><main>
+<div class="kicker">PS5 BROWSER RESEARCH LAB • STATIC EDITION</div>
+<h1>PS5 browser diagnostics</h1>
+<p class="intro">Check which browser features your PS5 exposes and record Canvas behavior. <strong>This is NOT a jailbreak, an exploit verifier, or a way to run unsigned games.</strong></p>
+<section>
+<label for="firmware">Firmware version (enter manually)</label>
+<input id="firmware" placeholder="e.g. 14.22" maxlength="40" autocomplete="off" spellcheck="false">
+<p class="muted">Find it under Settings → System → System Software → Console Information. The webpage cannot reliably identify firmware automatically.</p>
+</section>
+<section>
+<h2>1. Safe diagnostics</h2>
+<p>Checks JavaScript features, typed arrays and ordinary Canvas rendering. These tests do not attempt to exploit security flaws.</p>
+<button id="safe" type="button">Run safe checks</button>
+</section>
+<section class="caution">
+<h2>2. Optional Canvas reentrancy experiment</h2>
+<p>Tests a reentrant <code>getContext()</code> option-getter behavior. <strong>May crash, freeze or close the PS5 browser.</strong> It does not include memory-reclaim spraying, arbitrary memory access, a payload or a jailbreak.</p>
+<button class="warn" id="experiment" type="button">Run optional experiment</button>
+<p class="muted">A particular result does not demonstrate a use-after-free vulnerability.</p>
+</section>
+<section>
+<h2>Diagnostic report</h2>
+<p class="muted">Results stay in your browser. Nothing is uploaded or sent to a report server. GitHub Pages hosts the webpage, so normal hosting access logs may exist.</p>
+<pre id="output" tabindex="0" aria-label="Diagnostic output">No tests run.</pre>
+<p id="saveStatus" class="muted" aria-live="polite">Nothing collected yet.</p>
+<div class="actions">
+<button id="download" type="button" disabled>Download JSON</button>
+<button id="copy" type="button" disabled>Copy JSON</button>
+<button id="select" type="button" disabled>Select report text</button>
+</div>
+<p class="muted">If the PS5 browser blocks downloads or clipboard access, use <strong>Select report text</strong> and copy it manually if supported. You can also photograph the results.</p>
+</section>
+<footer>For use on consoles you own or are authorized to examine. No automatic probes, telemetry, tracking scripts or third-party JavaScript. Publication on GitHub Pages does not confirm compatibility with PS5 browser restrictions.</footer>
+</main><script>
+/* Standalone static browser diagnostic page. No outbound network requests. */
+(function () {
+  'use strict';
+  var tests = [];
+  var latestReport = null;
+  var out = document.getElementById('output');
+  var status = document.getElementById('saveStatus');
+  var firmware = document.getElementById('firmware');
+  var dl = document.getElementById('download');
+  var copy = document.getElementById('copy');
+  var select = document.getElementById('select');
+  var runId = 'lab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+
+  function record(name, fn) {
+    try { tests.push({name:name, result:fn()}); }
+    catch (error) { tests.push({name:name, error:String(error && error.message || error)}); }
+  }
+  function makeReport() {
+    return {id:runId, firmware:firmware.value || 'not specified',
+      ua:navigator.userAgent || '', time:new Date().toISOString(), tests:tests.slice()};
+  }
+  function render() {
+    latestReport = makeReport();
+    out.textContent = JSON.stringify(latestReport, null, 2);
+    dl.disabled = copy.disabled = select.disabled = false;
+    status.textContent = 'Report ready. Stored only in this browser session; no server upload.';
+  }
+  function getReportText() {
+    return latestReport ? JSON.stringify(latestReport, null, 2) : '';
+  }
+  document.getElementById('safe').addEventListener('click', function () {
+    tests = [];
+    record('browser_features', function () {
+      var features = {};
+      ['fetch','Worker','WebAssembly','SharedArrayBuffer','BigInt','WeakRef','FinalizationRegistry','OffscreenCanvas','FontFace','WebSocket','structuredClone','createImageBitmap'].forEach(function (name) { features[name] = typeof window[name]; });
+      return {platform:navigator.platform || '',language:navigator.language || '',features:features};
+    });
+    record('typed_arrays', function () {
+      var buf = new ArrayBuffer(16), view = new DataView(buf); view.setUint32(0,0xdecafbad,true);
+      return {byteLength:buf.byteLength,roundtrip:view.getUint32(0,true).toString(16),resizable:typeof buf.resize === 'function'};
+    });
+    record('canvas_baseline', function () {
+      var c = document.createElement('canvas'); c.width = c.height = 16;
+      var ctx = c.getContext('2d'); if (!ctx) return {canvas2d:false};
+      ctx.fillStyle='#ff0000'; ctx.fillRect(0,0,4,4);
+      var rgba=ctx.getImageData(1,1,1,1).data;
+      var bitmap = document.createElement('canvas').getContext('bitmaprenderer');
+      return {canvas2d:true,bitmaprenderer:!!bitmap,rgba:[rgba[0],rgba[1],rgba[2],rgba[3]]};
+    });
+    render();
+  });
+  document.getElementById('experiment').addEventListener('click', function () {
+    if (!window.confirm('This experiment may freeze or crash your PS5 browser. Run only on hardware you own. Continue?')) return;
+    record('canvas_reentrancy_EXPERIMENT', function () {
+      var c=document.createElement('canvas'), inner=null, count=0, options={};
+      Object.defineProperty(options,'alpha',{get:function () {count++;inner=c.getContext('2d');return true;}});
+      var outer=c.getContext('bitmaprenderer',options);
+      return {getter_invocations:count,inner_created:!!inner,outer_created:!!outer,
+        interpretation:'Observed browser context behavior only; NOT proof of a vulnerability.'};
+    });
+    render();
+  });
+  dl.addEventListener('click', function () {
+    if (!latestReport) return;
+    try {
+      var blob = new Blob([getReportText()], {type:'application/json'});
+      var url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download='ps5-browser-diagnostic.json'; document.body.appendChild(a); a.click();
+      if (a.parentNode) a.parentNode.removeChild(a);
+      setTimeout(function () {URL.revokeObjectURL(url);}, 1000);
+      status.textContent='Download requested. If blocked, try Copy JSON or Select report text.';
+    } catch (error) { status.textContent='Download unavailable ('+String(error.message || error)+'). Try copying or selecting the report.'; }
+  });
+  copy.addEventListener('click', function () {
+    if (!latestReport) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(getReportText()).then(function () {
+        status.textContent='Copied JSON to clipboard.';
+      }, function () { select.click(); status.textContent='Clipboard blocked. Report selected where supported; copy manually.'; });
+    } else { select.click(); status.textContent='Clipboard API unavailable. Report selected where supported; copy manually.'; }
+  });
+  select.addEventListener('click', function () {
+    if (!latestReport) return;
+    if (window.getSelection && document.createRange) {
+      var range=document.createRange(); range.selectNodeContents(out);
+      var selection=window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      if (out.focus) out.focus();
+      status.textContent='Report selected. Use your browser’s Copy command if available.';
+    } else { status.textContent='Text selection unavailable. Report is displayed above for a photo.'; }
+  });
+})();
+
+</script></body></html>
